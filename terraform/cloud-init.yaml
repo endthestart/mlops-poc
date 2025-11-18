@@ -1,0 +1,38 @@
+#cloud-config
+users:
+  - name: ubuntu
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    groups: users, admin
+    home: /home/ubuntu
+    shell: /bin/bash
+    lock_passwd: false
+    ssh_authorized_keys:
+      - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQC... # Replace with your public key
+
+# Set password for ubuntu user (optional, for console access)
+chpasswd:
+  list: |
+    ubuntu:ubuntu
+  expire: false
+
+# Configure network via DHCP
+network:
+  version: 2
+  ethernets:
+    enp1s0:
+      dhcp4: true
+
+# Install basic packages
+packages:
+  - qemu-guest-agent
+  - vim
+  - curl
+  - wget
+
+# Enable services
+runcmd:
+  - systemctl enable qemu-guest-agent
+  - systemctl start qemu-guest-agent
+
+# Set hostname (will be overridden per VM)
+hostname: mlops-node

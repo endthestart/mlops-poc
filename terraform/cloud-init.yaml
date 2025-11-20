@@ -35,4 +35,4 @@ runcmd:
   - systemctl start qemu-guest-agent
 
 # Set hostname (will be overridden per VM)
-hostname: mlops-node
+hostname: ${hostname}

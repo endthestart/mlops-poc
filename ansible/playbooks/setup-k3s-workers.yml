@@ -1,0 +1,57 @@
+---
+- name: Install k3s on worker nodes
+  hosts: workers
+  become: yes
+  vars:
+    k3s_master_ip: 192.168.100.10
+    k3s_node_token: "{{ lookup('file', '/tmp/k3s-token') }}"
+  tasks:
+    - name: Check if k3s-agent service exists
+      stat:
+        path: /etc/systemd/system/k3s-agent.service
+      register: k3s_service
+
+    - name: Check current token if k3s is installed
+      shell: grep "K3S_TOKEN=" /etc/systemd/system/k3s-agent.service.env 2>/dev/null | cut -d= -f2 || echo "none"
+      register: current_token
+      when: k3s_service.stat.exists
+      changed_when: false
+
+    - name: Uninstall k3s if token mismatch
+      shell: /usr/local/bin/k3s-agent-uninstall.sh
+      when: 
+        - k3s_service.stat.exists
+        - current_token.stdout != k3s_node_token
+      register: uninstalled
+
+    - name: Wait after uninstall
+      pause:
+        seconds: 5
+      when: uninstalled is changed
+
+    - name: Download k3s installation script
+      get_url:
+        url: https://get.k3s.io
+        dest: /tmp/k3s-install.sh
+        mode: '0755'
+
+    - name: Install k3s agent
+      shell: /tmp/k3s-install.sh
+      environment:
+        K3S_URL: "https://{{ k3s_master_ip }}:6443"
+        K3S_TOKEN: "{{ k3s_node_token }}"
+      args:
+        creates: /usr/local/bin/k3s
+
+    - name: Wait for k3s-agent to be ready
+      systemd:
+        name: k3s-agent
+        state: started
+      register: k3s_status
+      retries: 10
+      delay: 5
+      until: k3s_status.status.ActiveState == "active"
+
+    - name: Display agent status
+      debug:
+        msg: "k3s-agent is {{ k3s_status.status.ActiveState }}"

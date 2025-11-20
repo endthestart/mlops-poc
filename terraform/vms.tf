@@ -6,7 +6,7 @@ resource "libvirt_domain" "master" {
   memory = var.vm_master.memory
   vcpu   = var.vm_master.vcpu
 
-  cloudinit = libvirt_cloudinit_disk.commoninit.id
+  cloudinit = libvirt_cloudinit_disk.master.id
 
   network_interface {
     network_name   = "mlops-net"
@@ -37,7 +37,7 @@ resource "libvirt_domain" "gpu_worker" {
   memory = var.vm_gpu_worker.memory
   vcpu   = var.vm_gpu_worker.vcpu
 
-  cloudinit = libvirt_cloudinit_disk.commoninit.id
+  cloudinit = libvirt_cloudinit_disk.gpu_worker.id
 
   network_interface {
     network_name   = "mlops-net"
@@ -68,7 +68,7 @@ resource "libvirt_domain" "worker" {
   memory = var.vm_worker.memory
   vcpu   = var.vm_worker.vcpu
 
-  cloudinit = libvirt_cloudinit_disk.commoninit.id
+  cloudinit = libvirt_cloudinit_disk.worker.id
 
   network_interface {
     network_name   = "mlops-net"

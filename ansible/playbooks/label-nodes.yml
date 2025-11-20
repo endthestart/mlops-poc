@@ -1,0 +1,29 @@
+---
+- name: Label Kubernetes nodes
+  hosts: master
+  become: yes
+  tasks:
+    - name: Label master node
+      command: kubectl label nodes k3s-master node-role.kubernetes.io/control-plane=true --overwrite
+      changed_when: false
+
+    - name: Label GPU worker node
+      command: kubectl label nodes k3s-gpu-worker node-role.kubernetes.io/gpu-worker=true --overwrite
+      changed_when: false
+
+    - name: Add accelerator label to GPU worker
+      command: kubectl label nodes k3s-gpu-worker accelerator=nvidia --overwrite
+      changed_when: false
+
+    - name: Label standard worker node
+      command: kubectl label nodes k3s-worker node-role.kubernetes.io/worker=true --overwrite
+      changed_when: false
+
+    - name: Get labeled nodes
+      command: kubectl get nodes --show-labels
+      register: nodes_labels
+      changed_when: false
+
+    - name: Display node labels
+      debug:
+        var: nodes_labels.stdout_lines

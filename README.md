@@ -21,7 +21,7 @@ sudo mount -a
 ### Virtualization
 
 ```bash
-sudo pacman -S qemu-base qemu-system-x86 libvirt virt-manager bridge-utils ovmf terraform dnsmasq iptables-nft ebtables dmidecode
+sudo pacman -S qemu-base qemu-system-x86 libvirt virt-manager bridge-utils ovmf terraform dnsmasq iptables-nft ebtables dmidecode cdrtools
 ```
 
 Core packages:
@@ -37,6 +37,7 @@ Core packages:
 - iptables-nft - Firewall (needed for libvirt NAT)
 - ebtables - Ethernet bridge filtering
 - dmidecode - System information (libvirt uses this)
+- cdrtools - Tools that include mkisofs
 
 ```bash
 sudo usermod -aG kvm,libvirt $USER
@@ -62,3 +63,19 @@ cd terraform/
 terraform init
 terraform plan
 terraform apply
+
+### Ansible
+In a virtualenv
+```bash
+pip install ansible
+```
+
+```bash
+ansible-playbook playbooks/setup-k3s-master.yml
+ansible-playbook playbooks/setup-k3s-workers.yml
+ansible-playbook playbooks/label-nodes.yml
+```
+
+### Troubleshooting
+scripts/reinstall-k3s.sh
+scripts/rebuild-cluster.sh

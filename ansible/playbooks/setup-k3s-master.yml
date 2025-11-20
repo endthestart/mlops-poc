@@ -1,0 +1,63 @@
+---
+- name: Install k3s on master node
+  hosts: master
+  become: yes
+  tasks:
+    - name: Check if k3s is already installed
+      stat:
+        path: /etc/systemd/system/k3s.service
+      register: k3s_service_file
+
+    - name: Download k3s installation script
+      get_url:
+        url: https://get.k3s.io
+        dest: /tmp/k3s-install.sh
+        mode: '0755'
+      when: not k3s_service_file.stat.exists
+
+    - name: Install k3s server
+      shell: /tmp/k3s-install.sh
+      environment:
+        INSTALL_K3S_EXEC: "--write-kubeconfig-mode 644"
+      when: not k3s_service_file.stat.exists
+
+    - name: Wait for k3s to be ready
+      wait_for:
+        path: /var/lib/rancher/k3s/server/node-token
+        state: present
+        timeout: 60
+
+    - name: Ensure k3s service is started
+      systemd:
+        name: k3s
+        state: started
+        enabled: yes
+
+    - name: Get k3s node token
+      slurp:
+        src: /var/lib/rancher/k3s/server/node-token
+      register: k3s_token
+
+    - name: Store token as a fact
+      set_fact:
+        k3s_node_token: "{{ k3s_token.content | b64decode | regex_replace('\n', '') }}"
+        cacheable: true
+
+    - name: Save token to local file
+      local_action:
+        module: copy
+        content: "{{ k3s_node_token }}"
+        dest: "/tmp/k3s-token"
+      become: no
+
+    - name: Verify k3s is running
+      command: k3s kubectl get nodes
+      register: nodes_output
+      changed_when: false
+      retries: 5
+      delay: 10
+      until: nodes_output.rc == 0
+
+    - name: Display cluster status
+      debug:
+        var: nodes_output.stdout_lines

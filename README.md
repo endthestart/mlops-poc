@@ -74,8 +74,40 @@ pip install ansible
 ansible-playbook playbooks/setup-k3s-master.yml
 ansible-playbook playbooks/setup-k3s-workers.yml
 ansible-playbook playbooks/label-nodes.yml
+ansible-playbook playbooks/setup-smb-csi.yml
 ```
 
 ### Troubleshooting
 scripts/reinstall-k3s.sh
 scripts/rebuild-cluster.sh
+
+
+# K8s Commands
+sudo pacman -S kubectl
+mkdir -p ~/.kube
+scp ubuntu@192.168.100.10:/etc/rancher/k3s/k3s.yaml ~/.kube/config
+sed -i 's/127.0.0.1/192.168.100.10/g' ~/.kube/config
+kubectl get nodes
+kubectl apply -f k8s/storage/smb-secret.yaml
+kubectl apply -f k8s/storage/smb-storageclass.yaml
+kubectl get sc
+
+kubectl apply -f k8s/storage/test-pvc.yaml
+kubectl apply -f k8s/storage/test-pod.yaml
+
+kubectl wait --for=condition=ready pod/test-smb-pod --timeout=60s
+kubectl logs test-smb-pod
+kubectl describe pod test-smb-pod
+kubectl get pod test-smb-pod -o wide
+kubectl get pvc -w
+
+### Remove
+kubectl delete pod test-smb-pod
+kubectl delete pvc test-smb-pvc
+kubectl delete storageclass smb
+
+### Show
+kubectl get storageclass
+kubectl describe pvc test-smb-pvc
+kubectl get csidrivers
+kubectl get pods -n kube-system

@@ -1,0 +1,33 @@
+---
+- name: Install SMB CSI driver
+  hosts: master
+  become: yes
+  tasks:
+    - name: Download SMB CSI Install script
+      get_url:
+        url: https://raw.githubusercontent.com/kubernetes-csi/csi-driver-smb/master/deploy/install-driver.sh
+        dest: /tmp/install-smb-csi.sh
+        mode: '0755'
+
+    - name: Install SMB CSI driver
+      shell: /tmp/install-smb-csi.sh master snapshot
+      args:
+        creates: /tmp/smb-csi-installed
+
+    - name: Mark installation complete
+      file:
+        path: /tmp/smb-csi-installed
+        state: touch
+
+    - name: Wait for CSI driver pods
+      command: kubectl wait --for=condition=ready pod -l app=csi-smb-controller -n kube-system --timeout=120s
+      changed_when: false
+
+    - name: Verify CSI driver installation
+      command: kubectl get pods -n kube-system -l app=csi-smb-controller
+      register: csi_pods
+      changed_when: false
+
+    - name: Display CSI pods
+      debug:
+        var: csi_pods.stdout_lines

@@ -43,4 +43,32 @@ echo "Step 7: Verifying cluster..."
 ssh ubuntu@192.168.100.10 'kubectl get nodes'
 echo
 
+# Install SMB CSI driver
+echo "Step 8: Installing SMB CSI driver..."
+ansible-playbook playbooks/setup-smb-csi.yml
+echo
+
+# Get new kubeconfig
+cd ../
+echo "Step 9: Apply storage configuration..."
+scp ubuntu@192.168.100.10:/etc/rancher/k3s/k3s.yaml ~/.kube/config
+sed -i 's/127.0.0.1/192.168.100.10/g' ~/.kube/config
+kubectl get nodes
+echo
+
+# Apply storage configuration
+echo "Step 9: Apply storage configuration..."
+kubectl apply -f k8s/storage/smb-secret.yaml
+kubectl apply -f k8s/storage/smb-storageclass.yaml
+kubectl get sc
+echo
+
+# Deploy pod
+echo "Step 10: Deploy pod..."
+kubectl apply -f k8s/storage/test-pvc.yaml
+kubectl apply -f k8s/storage/test-pod.yaml
+kubectl wait --for=condition=ready pod/test-smb-pod --timeout=60s
+kubectl logs test-smb-pod
+echo
+
 echo "=== Cluster rebuild complete! ==="

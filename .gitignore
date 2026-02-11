@@ -19,7 +19,7 @@ __pycache__/
 *.swo
 
 # Secrets - DO NOT COMMIT
-k8s/storage/smb-secret.yaml
+#k8s/storage/smb-secret.yaml
 terraform/.smbcredentials
 .smbcredentials
 

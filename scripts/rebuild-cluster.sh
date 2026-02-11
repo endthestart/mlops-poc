@@ -64,11 +64,21 @@ kubectl get sc
 echo
 
 # Deploy pod
-echo "Step 10: Deploy pod..."
+echo "Step 10: Deploy test pod..."
 kubectl apply -f k8s/storage/test-pvc.yaml
 kubectl apply -f k8s/storage/test-pod.yaml
 kubectl wait --for=condition=ready pod/test-smb-pod --timeout=60s
 kubectl logs test-smb-pod
 echo
+
+
+# Deploy nvidia inference service
+echo "Step 11: Deploy nvidia inference service..."
+kubectl apply -f k8s/gpu/nvidia-device-plugin.yaml
+# Verify
+kubectl get pods -n kube-system | grep nvidia
+kubectl describe node k3s-gpu-worker | grep nvidia.com/gpu
+echo
+
 
 echo "=== Cluster rebuild complete! ==="

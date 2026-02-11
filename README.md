@@ -1,4 +1,55 @@
-## Project Goals
+## MLOps Infrastructure — Deployment & Automation
+
+### Repo Role
+
+This repo manages **infrastructure and deployment** for the Senex Trader ML training pipeline. It does NOT contain any ML code or trading logic.
+
+#### Three-Repo Architecture
+
+| Repo | Role | Contains |
+|------|------|----------|
+| **`senextrader/`** | Production App + Production ML | Django app, production training pipeline, model registry, Dockerfile |
+| **`ml/`** | Research & Experimentation | Prototypes, sweeps, alpha discovery, data parsers, research docs |
+| **`mlops-poc/`** (this repo) | Infrastructure & Deployment | Ansible playbooks, systemd timers, GPU setup, storage config |
+
+#### What Belongs Here
+
+- ✅ Ansible playbooks for deploying to carbonio
+- ✅ Systemd service/timer definitions
+- ✅ GPU passthrough documentation
+- ✅ SMB/network storage configuration
+- ✅ Terraform/Libvirt VM infrastructure (K8s learning project)
+- ✅ Infrastructure scripts (IOMMU, cluster rebuild)
+
+#### What Does NOT Belong Here
+
+- ❌ ML training code → `senextrader/ml/`
+- ❌ Research/experiment scripts → `ml/`
+- ❌ Django models or app code → `senextrader/`
+- ❌ Trained model checkpoints → Network storage (`/mnt/hub/appdata/ml/checkpoints/`)
+
+### ML Training Deployment (Carbonio)
+
+```bash
+# Deploy weekend training pipeline to carbonio
+cd ansible/
+ansible-playbook playbooks/setup-ml-training.yml
+
+# Just rebuild the container image
+ansible-playbook playbooks/setup-ml-training.yml --tags build
+
+# Run tests
+ansible-playbook playbooks/setup-ml-training.yml --tags test
+```
+
+**Architecture:** Podman container + systemd timers (not K8s)
+- `ml-ssh-tunnel.service` — Persistent SSH tunnel to minipc PostgreSQL
+- `ml-training-saturday.service` — Weekend training pipeline
+- `ml-training-saturday.timer` — Fires Saturday 6am
+
+---
+
+## Original Project Goals
 Build a production-like MLOps infrastructure for model inference using GPU acceleration on a local baremetal host.
 
 ### Learning Objectives

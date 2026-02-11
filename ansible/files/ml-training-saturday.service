@@ -1,0 +1,25 @@
+[Unit]
+Description=Weekend ML Training Pipeline
+After=ml-ssh-tunnel.service
+Requires=ml-ssh-tunnel.service
+
+[Service]
+Type=oneshot
+User=andermic
+TimeoutStartSec=28800
+Environment=CHECKPOINT_DIR=/mnt/hub/appdata/ml/checkpoints
+WorkingDirectory=/home/andermic/Development/senextrader
+ExecStart=/usr/bin/podman run --rm \
+    --name ml-training-weekend \
+    --device nvidia.com/gpu=all \
+    --network host \
+    -v /mnt/hub/appdata/ml/checkpoints:/app/ml/checkpoints \
+    -v /mnt/hub/appdata/ml/active:/mnt/hub/appdata/ml/active \
+    -v /mnt/hub/appdata/ml/ml_data:/ml_data \
+    -e DATABASE_HOST=localhost \
+    -e DATABASE_PORT=5433 \
+    senextrader-ml:latest \
+    bash ml/scripts/weekend_full_pipeline.sh
+
+[Install]
+WantedBy=multi-user.target

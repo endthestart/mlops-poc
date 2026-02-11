@@ -1,0 +1,223 @@
+---
+# Setup ML Training Pipeline on Carbonio GPU Server
+#
+# Configures:
+#   - SSH tunnel to minipc PostgreSQL staging
+#   - SMB network storage mount
+#   - Podman container with GPU access
+#   - Systemd timer for weekend training
+#
+# Usage:
+#   cd ansible/
+#   ansible-playbook playbooks/setup-ml-training.yml
+#   ansible-playbook playbooks/setup-ml-training.yml --tags build  # Just rebuild image
+#   ansible-playbook playbooks/setup-ml-training.yml --tags test   # Run quick test
+
+- name: Setup ML Training Pipeline
+  hosts: gpu_training
+  become: false
+
+  vars:
+    senextrader_dir: /home/andermic/Development/senextrader
+    storage_base: /mnt/hub/appdata/ml
+    checkpoint_dir: "{{ storage_base }}/checkpoints"
+    ml_data_dir: "{{ storage_base }}/ml_data"
+    container_image: senextrader-ml:latest
+
+  tasks:
+    # ========================================
+    # Prerequisites
+    # ========================================
+
+    - name: Check nvidia-container-toolkit
+      command: nvidia-container-cli --version
+      register: nvidia_cli
+      changed_when: false
+      ignore_errors: true
+      tags: [prereqs]
+
+    - name: Verify GPU access
+      command: nvidia-smi --query-gpu=name --format=csv,noheader
+      register: gpu_check
+      changed_when: false
+      tags: [prereqs]
+
+    - name: Show GPU info
+      debug:
+        msg: "GPU: {{ gpu_check.stdout }}"
+      tags: [prereqs]
+
+    # ========================================
+    # Storage Setup
+    # ========================================
+
+    - name: Create storage directories
+      become: true
+      file:
+        path: "{{ item }}"
+        state: directory
+        owner: andermic
+        group: andermic
+        mode: "0755"
+      loop:
+        - "{{ checkpoint_dir }}"
+        - "{{ ml_data_dir }}"
+      tags: [storage]
+
+    # ========================================
+    # SSH Tunnel Service
+    # ========================================
+
+    - name: Copy SSH tunnel service
+      become: true
+      copy:
+        src: ../files/ml-ssh-tunnel.service
+        dest: /etc/systemd/system/ml-ssh-tunnel.service
+        mode: "0644"
+      notify: reload systemd
+      tags: [tunnel]
+
+    - name: Enable and start SSH tunnel
+      become: true
+      systemd:
+        name: ml-ssh-tunnel
+        enabled: true
+        state: started
+      tags: [tunnel]
+
+    - name: Wait for tunnel to be ready
+      wait_for:
+        port: 5433
+        host: localhost
+        timeout: 30
+      tags: [tunnel]
+
+    # ========================================
+    # Build Container Image
+    # ========================================
+
+    - name: Check if senextrader repo exists
+      stat:
+        path: "{{ senextrader_dir }}"
+      register: repo_stat
+      tags: [build]
+
+    - name: Build training container image
+      command: >
+        podman build
+        -f docker/Dockerfile.training
+        -t {{ container_image }}
+        .
+      args:
+        chdir: "{{ senextrader_dir }}"
+      when: repo_stat.stat.exists
+      tags: [build]
+
+    # ========================================
+    # Test GPU in Container
+    # ========================================
+
+    - name: Test GPU access in container
+      command: >
+        podman run --rm
+        --device nvidia.com/gpu=all
+        {{ container_image }}
+        python -c "import torch; print(f'CUDA: {torch.cuda.is_available()}, GPU: {torch.cuda.get_device_name(0) if torch.cuda.is_available() else \"N/A\"}')"
+      register: gpu_test
+      tags: [test]
+
+    - name: Show GPU test result
+      debug:
+        msg: "{{ gpu_test.stdout }}"
+      tags: [test]
+
+    # ========================================
+    # Test Database Connection
+    # ========================================
+
+    - name: Test database connection in container
+      command: >
+        podman run --rm
+        --network host
+        {{ container_image }}
+        python -c "
+        import ml
+        from ml.data.database import print_database_stats
+        print_database_stats()
+        "
+      register: db_test
+      tags: [test]
+
+    - name: Show database test result
+      debug:
+        msg: "{{ db_test.stdout }}"
+      tags: [test]
+
+    # ========================================
+    # Quick Training Test
+    # ========================================
+
+    - name: Run quick training test
+      command: >
+        podman run --rm
+        --device nvidia.com/gpu=all
+        --network host
+        -v {{ checkpoint_dir }}:/app/ml/checkpoints
+        {{ container_image }}
+        python ml/scripts/weekend_training.py --quick
+      register: quick_test
+      timeout: 1800
+      tags: [test, never]
+
+    - name: Show quick test result
+      debug:
+        msg: "{{ quick_test.stdout_lines[-10:] }}"
+      when: quick_test is defined
+      tags: [test, never]
+
+    # ========================================
+    # Install Systemd Timer
+    # ========================================
+
+    - name: Copy training service
+      become: true
+      copy:
+        src: ../files/ml-training-saturday.service
+        dest: /etc/systemd/system/ml-training-saturday.service
+        mode: "0644"
+      notify: reload systemd
+      tags: [timer]
+
+    - name: Copy training timer
+      become: true
+      copy:
+        src: ../files/ml-training-saturday.timer
+        dest: /etc/systemd/system/ml-training-saturday.timer
+        mode: "0644"
+      notify: reload systemd
+      tags: [timer]
+
+    - name: Enable training timer
+      become: true
+      systemd:
+        name: ml-training-saturday.timer
+        enabled: true
+        state: started
+      tags: [timer]
+
+    - name: Show timer status
+      command: systemctl list-timers ml-training-saturday.timer
+      register: timer_status
+      changed_when: false
+      tags: [timer]
+
+    - name: Display timer info
+      debug:
+        msg: "{{ timer_status.stdout }}"
+      tags: [timer]
+
+  handlers:
+    - name: reload systemd
+      become: true
+      systemd:
+        daemon_reload: true

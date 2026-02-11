@@ -1,0 +1,10 @@
+[Unit]
+Description=Weekend ML Training Timer (Saturday 6am)
+
+[Timer]
+OnCalendar=Sat *-*-* 06:00:00
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,14 @@
+[Unit]
+Description=SSH tunnel to minipc PostgreSQL staging database
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=andermic
+ExecStart=/usr/bin/ssh -N -L 5433:localhost:5432 minipc -o ServerAliveInterval=60 -o ServerAliveCountMax=3 -o ExitOnForwardFailure=yes
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

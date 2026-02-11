@@ -7,7 +7,7 @@ users:
     shell: /bin/bash
     lock_passwd: false
     ssh_authorized_keys:
-      - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQC... # Replace with your public key
+      - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFLl2avswsuAJy77mULHO4FxpXRPaV/VcOCH3bZW2rJX andermic@gmail.com
 
 # Set password for ubuntu user (optional, for console access)
 chpasswd:

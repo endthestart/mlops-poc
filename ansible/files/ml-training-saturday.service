@@ -6,20 +6,12 @@ Requires=ml-ssh-tunnel.service
 [Service]
 Type=oneshot
 User=andermic
-TimeoutStartSec=28800
-Environment=CHECKPOINT_DIR=/mnt/hub/appdata/ml/checkpoints
-WorkingDirectory=/home/andermic/Development/senextrader
-ExecStart=/usr/bin/podman run --rm \
-    --name ml-training-weekend \
-    --device nvidia.com/gpu=all \
-    --network host \
-    -v /mnt/hub/appdata/ml/checkpoints:/app/ml/checkpoints \
-    -v /mnt/hub/appdata/ml/active:/mnt/hub/appdata/ml/active \
-    -v /mnt/hub/appdata/ml/ml_data:/ml_data \
-    -e DATABASE_HOST=localhost \
-    -e DATABASE_PORT=5433 \
-    senextrader-ml:latest \
-    bash ml/scripts/weekend_full_pipeline.sh
+TimeoutStartSec=50400
+WorkingDirectory=/home/andermic/Development/senex-project/senextrader
+EnvironmentFile=/home/andermic/Development/senex-project/senextrader/.env.ml
+ExecStartPre=-/usr/bin/podman stop ollama
+ExecStartPost=-/usr/bin/podman start ollama
+ExecStart=/home/andermic/Development/senex-project/senextrader/.venv/bin/python -m ml.scripts.weekend_training --parallel
 
 [Install]
 WantedBy=multi-user.target

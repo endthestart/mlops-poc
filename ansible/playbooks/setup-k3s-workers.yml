@@ -40,6 +40,7 @@
       environment:
         K3S_URL: "https://{{ k3s_master_ip }}:6443"
         K3S_TOKEN: "{{ k3s_node_token }}"
+        INSTALL_K3S_VERSION: "{{ lookup('file', playbook_dir + '/../../K3S_VERSION') }}"
       args:
         creates: /usr/local/bin/k3s
 

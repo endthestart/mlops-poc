@@ -19,8 +19,8 @@ __pycache__/
 *.swo
 
 # Secrets - DO NOT COMMIT
-k8s/storage/smb-secret.yaml
-terraform/.smbcredentials
+mlops/k8s/storage/smb-secret.yaml
+environments/libvirt/terraform/.smbcredentials
 .smbcredentials
 
 # Model files (too large for git)

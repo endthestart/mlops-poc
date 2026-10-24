@@ -19,6 +19,7 @@
       shell: /tmp/k3s-install.sh
       environment:
         INSTALL_K3S_EXEC: "--write-kubeconfig-mode 644"
+        INSTALL_K3S_VERSION: "{{ lookup('file', playbook_dir + '/../../K3S_VERSION') }}"
       when: not k3s_service_file.stat.exists
 
     - name: Wait for k3s to be ready

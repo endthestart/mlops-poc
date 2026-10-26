@@ -80,6 +80,23 @@ check_policy() {
   ((total <= MAX_TOTAL_VCPU)) || die "starting $PROFILE would put $total vCPU in VMs; the host limit is $MAX_TOTAL_VCPU"
 }
 
+# Pods that finished (add-on install jobs) or are being deleted (a disabled
+# add-on) never become Ready, so only the rest are waited for.
+wait_for_system_pods() {
+  local deadline=$((SECONDS + 240)) pending
+  while true; do
+    pending="$(kubectl --context "$CONTEXT" -n kube-system get pods -o json | jq -r '
+      .items[]
+      | select(.metadata.deletionTimestamp == null)
+      | select(.status.phase != "Succeeded" and .status.phase != "Failed")
+      | select(any(.status.conditions[]?; .type == "Ready" and .status == "True") | not)
+      | .metadata.name')"
+    [[ -n "$pending" ]] || return 0
+    ((SECONDS < deadline)) || die "kube-system pods not Ready after 240 s: $(echo $pending)"
+    sleep 5
+  done
+}
+
 up() {
   check_policy
   colima start -p "$PROFILE" \
@@ -87,8 +104,8 @@ up() {
     --runtime "$RUNTIME" \
     --kubernetes --kubernetes-version "$K3S_VERSION" --k3s-arg="$K3S_ARGS"
   kubectl --context "$CONTEXT" wait --for=condition=Ready node --all --timeout=180s
-  kubectl --context "$CONTEXT" -n kube-system wait --for=condition=Ready pod --all \
-    --field-selector=status.phase!=Succeeded --timeout=240s
+  wait_for_system_pods
+  kubectl --context "$CONTEXT" -n kube-system get pods
 }
 
 down() {

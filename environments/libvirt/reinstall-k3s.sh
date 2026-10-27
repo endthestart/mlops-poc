@@ -3,6 +3,8 @@
 
 set -e
 
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+
 echo "=== Quick k3s Reinstall ==="
 echo
 
@@ -20,7 +22,7 @@ echo
 
 # Reinstall k3s
 echo "Step 3: Installing k3s on master node..."
-cd ansible/
+cd "$ROOT/ansible"
 ansible-playbook playbooks/setup-k3s-master.yml
 echo
 

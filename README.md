@@ -1,164 +1,62 @@
-## MLOps Infrastructure — Deployment & Automation
+# Home lab platform
 
-### Repo Role
+A home lab for learning platform and identity engineering: one set of
+Kubernetes manifests, several environments. It began as an MLOps proof of
+concept (GPU training on K3s across libvirt VMs). Those parts now live in
+[mlops/](mlops/) and come back later.
 
-This repo manages **infrastructure and deployment** for the Senex Trader ML training pipeline. It does NOT contain any ML code or trading logic.
+## Layers
 
-#### Three-Repo Architecture
+| Layer | macpro-colima | libvirt |
+| --- | --- | --- |
+| VM | Colima profile ([environments/macpro-colima](environments/macpro-colima/)) | Terraform and libvirt ([environments/libvirt](environments/libvirt/)) |
+| K3s | installed by Colima | Ansible playbooks ([ansible/](ansible/)) |
+| Cluster | shared manifests, one overlay per environment (coming) | same |
 
-| Repo | Role | Contains |
-|------|------|----------|
-| **`senextrader/`** | Production App + Production ML | Django app, production training pipeline, model registry, Dockerfile |
-| **`ml/`** | Research & Experimentation | Prototypes, sweeps, alpha discovery, data parsers, research docs |
-| **`mlops-poc/`** (this repo) | Infrastructure & Deployment | Ansible playbooks, systemd timers, GPU setup, storage config |
+[K3S_VERSION](K3S_VERSION) pins the K3s release for every environment.
 
-#### What Belongs Here
+## Environments
 
-- ✅ Ansible playbooks for deploying to carbonio
-- ✅ Systemd service/timer definitions
-- ✅ GPU passthrough documentation
-- ✅ SMB/network storage configuration
-- ✅ Terraform/Libvirt VM infrastructure (K8s learning project)
-- ✅ Infrastructure scripts (IOMMU, cluster rebuild)
+- **macpro-colima**: a single-node K3s in a 2 vCPU, 8 GiB Colima VM on an
+  Intel Mac Pro. Working.
+- **libvirt**: K3s across libvirt VMs on a Linux host. It last ran in
+  November 2025 and has been moved into this layout but not tested since. See
+  [environments/libvirt/README.md](environments/libvirt/README.md).
 
-#### What Does NOT Belong Here
+## macpro-colima
 
-- ❌ ML training code → `senextrader/ml/`
-- ❌ Research/experiment scripts → `ml/`
-- ❌ Django models or app code → `senextrader/`
-- ❌ Trained model checkpoints → Network storage (`/mnt/hub/appdata/ml/checkpoints/`)
-
-### ML Training Deployment (Carbonio)
+Needs `colima`, `kubectl` and `jq` (`brew install colima kubectl jq`).
 
 ```bash
-# Deploy weekend training pipeline to carbonio
-cd ansible/
-ansible-playbook playbooks/setup-ml-training.yml
-
-# Just rebuild the container image
-ansible-playbook playbooks/setup-ml-training.yml --tags build
-
-# Run tests
-ansible-playbook playbooks/setup-ml-training.yml --tags test
+environments/macpro-colima/lab up      # start the VM and wait for K3s
+environments/macpro-colima/lab status
+environments/macpro-colima/lab down
 ```
 
-**Architecture:** Podman container + systemd timers (not K8s)
-- `ml-ssh-tunnel.service` — Persistent SSH tunnel to minipc PostgreSQL
-- `ml-training-saturday.service` — Weekend training pipeline
-- `ml-training-saturday.timer` — Fires Saturday 6am
+The VM's size, runtime and K3s arguments are in
+[colima.env](environments/macpro-colima/colima.env). The kubectl context is
+`colima-homelab`.
 
----
-
-## Original Project Goals
-Build a production-like MLOps infrastructure for model inference using GPU acceleration on a local baremetal host.
-
-### Learning Objectives
-- Deploy infrastructure as code using Terraform + Libvirt
-- Configure GPU passthrough to VMs
-- Set up Kubernetes cluster (k3s) across VMs
-- Deploy GPU-accelerated inference services
-- Implement monitoring and observability
-
-## System Setup
-
-### Network Storage
-Mount network storage to /mnt/storage/ in /etc/fstab
-```bash
-//10.0.0.209/storage /mnt/storage cifs credentials=/root/.smbcredentials,uid=libvirt-qemu,gid=kvm,file_mode=0660,dir_mode=0770,_netdev,x-systemd.automount 0 0
-sudo mkdir -p /mnt/kvm/mlops-pool
-sudo mount -a
-```
-
-### Virtualization
+`lab up` refuses to start when the host's VM policy would be broken. That
+policy belongs to the host, not this repo, so it lives in
+`~/.config/homelab/macpro-policy.env` (or the file named by `LAB_POLICY_FILE`):
 
 ```bash
-sudo pacman -S qemu-base qemu-system-x86 libvirt virt-manager bridge-utils ovmf terraform dnsmasq iptables-nft ebtables dmidecode cdrtools
+MAX_VM_VCPU=2                  # per VM
+MAX_VM_MEMORY_GIB=8            # per VM
+MAX_TOTAL_VCPU=4               # all running VMs together
+EXCLUSIVE_PROFILES="other-vm"  # Colima profiles this VM never runs alongside
+UNCOUNTED_PROFILES=""          # Colima profiles left out of the total
+UNCOUNTED_FUSION_VMS=""        # VMware Fusion VMs left out of the total
 ```
 
-Core packages:
+## Secrets
 
-- qemu-base - QEMU core
-- qemu-system-x86 - x86_64 emulator (provides qemu-system-x86_64)
-- libvirt - Virtualization API
-- virt-manager - GUI management tool (optional but useful)
-- bridge-utils - Network bridging tools
-- ovmf - UEFI firmware
-- terraform - Infrastructure as Code
-- dnsmasq - DNS/DHCP for libvirt networks
-- iptables-nft - Firewall (needed for libvirt NAT)
-- ebtables - Ethernet bridge filtering
-- dmidecode - System information (libvirt uses this)
-- cdrtools - Tools that include mkisofs
+Nothing secret is committed here. Environment values and secrets, encrypted
+with SOPS, live in a separate private repository. Scan before committing:
+`gitleaks git --pre-commit --staged`.
 
-```bash
-sudo usermod -aG kvm,libvirt $USER
-sudo systemctl start libvirtd
-sudo systemctl enable libvirtd
-```
+## Roadmap
 
-```bash
-$ scripts/iommu.sh
-IOMMU Group 17 07:00.0 VGA compatible controller [0300]: NVIDIA Corporation AD103 [GeForce RTX 4080 SUPER] [10de:2702] (rev a1)
-```
-
-### Networking
-```bash
-sudo virsh net-define network.xml
-sudo virsh net-start mlops-net
-sudo virsh net-autostart mlops-net
-```
-
-### Terraform
-Add public key to cloud-init.yaml
-cd terraform/
-terraform init
-terraform plan
-terraform apply
-
-### Ansible
-In a virtualenv
-```bash
-pip install ansible
-```
-
-```bash
-ansible-playbook playbooks/setup-k3s-master.yml
-ansible-playbook playbooks/setup-k3s-workers.yml
-ansible-playbook playbooks/label-nodes.yml
-ansible-playbook playbooks/setup-smb-csi.yml
-```
-
-### Troubleshooting
-scripts/reinstall-k3s.sh
-scripts/rebuild-cluster.sh
-
-
-# K8s Commands
-sudo pacman -S kubectl
-mkdir -p ~/.kube
-scp ubuntu@192.168.100.10:/etc/rancher/k3s/k3s.yaml ~/.kube/config
-sed -i 's/127.0.0.1/192.168.100.10/g' ~/.kube/config
-kubectl get nodes
-kubectl apply -f k8s/storage/smb-secret.yaml
-kubectl apply -f k8s/storage/smb-storageclass.yaml
-kubectl get sc
-
-kubectl apply -f k8s/storage/test-pvc.yaml
-kubectl apply -f k8s/storage/test-pod.yaml
-
-kubectl wait --for=condition=ready pod/test-smb-pod --timeout=60s
-kubectl logs test-smb-pod
-kubectl describe pod test-smb-pod
-kubectl get pod test-smb-pod -o wide
-kubectl get pvc -w
-
-### Remove
-kubectl delete pod test-smb-pod
-kubectl delete pvc test-smb-pvc
-kubectl delete storageclass smb
-
-### Show
-kubectl get storageclass
-kubectl describe pvc test-smb-pvc
-kubectl get csidrivers
-kubectl get pods -n kube-system
+Ingress (Traefik), TLS (cert-manager with a lab CA) and Postgres
+(CloudNativePG), then Keycloak and the identity work on top.

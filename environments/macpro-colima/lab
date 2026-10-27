@@ -1,0 +1,130 @@
+#!/usr/bin/env bash
+# Starts, stops and reports the macpro-colima environment, refusing to start
+# when the host's VM policy would be broken.
+set -euo pipefail
+
+ENV_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$(cd "$ENV_DIR/../.." && pwd)"
+POLICY_FILE="${LAB_POLICY_FILE:-$HOME/.config/homelab/macpro-policy.env}"
+VMRUN="/Applications/VMware Fusion.app/Contents/Public/vmrun"
+
+die() {
+  echo "lab: $*" >&2
+  exit 1
+}
+
+usage() {
+  echo "usage: lab up|down|status" >&2
+  exit 2
+}
+
+require() {
+  local var
+  for var in "$@"; do
+    [[ -n "${!var:-}" ]] || die "$var is not set"
+  done
+}
+
+load_config() {
+  # shellcheck source=colima.env
+  source "$ENV_DIR/colima.env"
+  [[ -f "$POLICY_FILE" ]] || die "host policy file $POLICY_FILE not found (set LAB_POLICY_FILE)"
+  # shellcheck disable=SC1090
+  source "$POLICY_FILE"
+  K3S_VERSION="$(<"$ROOT/K3S_VERSION")"
+  require PROFILE CPUS MEMORY_GIB DISK_GIB RUNTIME K3S_VERSION \
+    MAX_VM_VCPU MAX_VM_MEMORY_GIB MAX_TOTAL_VCPU
+  [[ "${K3S_ARGS+set}" == set ]] || die "K3S_ARGS is not set (set it empty for none)"
+  CONTEXT="colima-$PROFILE"
+}
+
+in_list() {
+  case " $2 " in
+    *" $1 "*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+running_colima_profiles() {
+  colima list --json | jq -r 'select(.status == "Running") | "\(.name) \(.cpus)"'
+}
+
+running_fusion_vms() {
+  [[ -x "$VMRUN" ]] || return 0
+  local vmx cpus
+  "$VMRUN" list | tail -n +2 | while IFS= read -r vmx; do
+    [[ -r "$vmx" ]] || die "cannot read running Fusion VM $vmx"
+    cpus="$(sed -nE 's/^numvcpus *= *"([0-9]+)".*/\1/p' "$vmx")"
+    echo "$(basename "$vmx" .vmx) ${cpus:-1}"
+  done
+}
+
+check_policy() {
+  ((CPUS <= MAX_VM_VCPU)) || die "$PROFILE wants $CPUS vCPU; the per-VM limit is $MAX_VM_VCPU"
+  ((MEMORY_GIB <= MAX_VM_MEMORY_GIB)) || die "$PROFILE wants $MEMORY_GIB GiB; the per-VM limit is $MAX_VM_MEMORY_GIB"
+
+  local total=$CPUS name cpus
+  while read -r name cpus; do
+    [[ -n "$name" && "$name" != "$PROFILE" ]] || continue
+    in_list "$name" "${EXCLUSIVE_PROFILES:-}" && die "Colima profile $name is running; $PROFILE never runs alongside it"
+    in_list "$name" "${UNCOUNTED_PROFILES:-}" && continue
+    total=$((total + cpus))
+  done < <(running_colima_profiles)
+
+  while read -r name cpus; do
+    [[ -n "$name" ]] || continue
+    in_list "$name" "${UNCOUNTED_FUSION_VMS:-}" && continue
+    total=$((total + cpus))
+  done < <(running_fusion_vms)
+
+  ((total <= MAX_TOTAL_VCPU)) || die "starting $PROFILE would put $total vCPU in VMs; the host limit is $MAX_TOTAL_VCPU"
+}
+
+# Pods that finished (add-on install jobs) or are being deleted (a disabled
+# add-on) never become Ready, so only the rest are waited for.
+wait_for_system_pods() {
+  local deadline=$((SECONDS + 240)) pending
+  while true; do
+    pending="$(kubectl --context "$CONTEXT" -n kube-system get pods -o json | jq -r '
+      .items[]
+      | select(.metadata.deletionTimestamp == null)
+      | select(.status.phase != "Succeeded" and .status.phase != "Failed")
+      | select(any(.status.conditions[]?; .type == "Ready" and .status == "True") | not)
+      | .metadata.name')"
+    [[ -n "$pending" ]] || return 0
+    ((SECONDS < deadline)) || die "kube-system pods not Ready after 240 s: $(echo $pending)"
+    sleep 5
+  done
+}
+
+up() {
+  check_policy
+  colima start -p "$PROFILE" \
+    --cpus "$CPUS" --memory "$MEMORY_GIB" --disk "$DISK_GIB" \
+    --runtime "$RUNTIME" \
+    --kubernetes --kubernetes-version "$K3S_VERSION" --k3s-arg="$K3S_ARGS"
+  kubectl --context "$CONTEXT" wait --for=condition=Ready node --all --timeout=180s
+  wait_for_system_pods
+  kubectl --context "$CONTEXT" -n kube-system get pods
+}
+
+down() {
+  colima stop -p "$PROFILE"
+}
+
+status() {
+  local state
+  state="$(colima list --json | jq -r --arg p "$PROFILE" 'select(.name == $p) | .status')"
+  echo "$PROFILE: ${state:-not created}"
+  [[ "$state" == Running ]] || return 0
+  kubectl --context "$CONTEXT" get nodes
+}
+
+[[ $# -eq 1 ]] || usage
+load_config
+case "$1" in
+  up) up ;;
+  down) down ;;
+  status) status ;;
+  *) usage ;;
+esac

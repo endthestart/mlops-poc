@@ -45,9 +45,9 @@ policy belongs to the host, not this repo, so it lives in
 MAX_VM_VCPU=2                  # per VM
 MAX_VM_MEMORY_GIB=8            # per VM
 MAX_TOTAL_VCPU=4               # all running VMs together
-EXCLUSIVE_PROFILES="other-vm"  # Colima profiles this VM never runs alongside
-UNCOUNTED_PROFILES=""          # Colima profiles left out of the total
-UNCOUNTED_FUSION_VMS=""        # VMware Fusion VMs left out of the total
+EXCLUSIVE_PROFILES="other-vm"  # comma-separated Colima profiles this VM never runs alongside
+UNCOUNTED_PROFILES=""          # comma-separated, left out of the total
+UNCOUNTED_FUSION_VMS=""        # comma-separated .vmx names, left out of the total
 ```
 
 ## Secrets
